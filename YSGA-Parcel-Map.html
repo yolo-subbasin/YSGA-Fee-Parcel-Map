@@ -739,9 +739,7 @@
     // visible map bounds get a tooltip, rebuilt on every pan/zoom.
     // Each layer's bounds are cached once at load so this stays a
     // cheap numeric check rather than recomputing geometry bounds
-    // on every move. Small parcels (< MIN_LABEL_ACRES) are excluded
-    // from the cache entirely up front, since they'd rarely have
-    // room to show a readable label anyway.
+    // on every move.
     // ---------------------------------------------------------------
 
     const LABEL_MIN_ZOOM = 15;

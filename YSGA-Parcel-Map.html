@@ -253,21 +253,21 @@
     font-family: inherit;
   }
 
-  .mode-toggle-control {
-    background: #ffffff;
-    padding: 8px 10px;
-    font-family: inherit;
-    font-size: 12.5px;
-    line-height: 1.6;
+  .apn-label {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #1a1a1a;
+    text-shadow: 0 0 3px #ffffff, 0 0 3px #ffffff, 0 0 3px #ffffff;
+    display: none;
+    pointer-events: none;
   }
-  .mode-toggle-control label {
-    display: block;
-    white-space: nowrap;
-    cursor: pointer;
-  }
-  .mode-toggle-control input {
-    margin-right: 5px;
-  }
+  .apn-label::before { display: none; }
+  #map.labels-visible .apn-label { display: block; }
 
   @media (max-width: 720px) {
     #app { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; }
@@ -489,6 +489,8 @@
   );
 
   let selectedLayer = null;
+  let geoLayer = null;
+  let hatchLayer = null;
   let landCoverByAPN = {};
   let focusApn = null; // set when a parcel is selected, to dim everything else
   const highlightGroup = L.featureGroup().addTo(map);
@@ -508,17 +510,6 @@
     const apn = String(feature.properties[PARCEL_APN_FIELD]);
     const dimmed = focusApn && apn !== focusApn;
     return { stroke: false, fillColor: hatchPattern, fillOpacity: dimmed ? 0.05 : 1, interactive: false };
-  }
-
-  function landCoverStyle(feature) {
-    const apn = String(feature.properties[LC_APN_FIELD]);
-    const dimmed = focusApn && apn !== focusApn;
-    return {
-      color: 'rgba(0,0,0,0.15)',
-      weight: 0.5,
-      fillColor: landCoverFill(cropLetter(feature.properties[LC_CODE_FIELD])),
-      fillOpacity: dimmed ? 0.05 : 0.65
-    };
   }
 
   // ---------------------------------------------------------------
@@ -611,71 +602,6 @@
   // LOAD DATA
   // ---------------------------------------------------------------
 
-  // ---------------------------------------------------------------
-  // VIEWPORT-BASED RENDERING
-  // At 65k+ parcels, redrawing everything on every pan/zoom is the
-  // real bottleneck — Canvas is fast, but it still has to repaint
-  // every shape currently attached to the map on every frame. This
-  // builds each feature's Leaflet layer once up front (cheap, one
-  // time), but only actually adds the layers near the current view
-  // to the map, swapping them in/out as you move. A dataset of any
-  // size then costs roughly the same to render as "however many
-  // parcels fit on screen," not "the whole dataset."
-  // ---------------------------------------------------------------
-
-  function buildViewportSet(features, styleFn, extraOptions, onEachFeature) {
-    const entries = new Array(features.length);
-    for (let i = 0; i < features.length; i++) {
-      const feature = features[i];
-      const layer = L.GeoJSON.geometryToLayer(
-        feature,
-        Object.assign({ renderer: canvasRenderer }, styleFn(feature), extraOptions)
-      );
-      if (onEachFeature) onEachFeature(feature, layer);
-      const b = layer.getBounds();
-      entries[i] = {
-        feature, layer,
-        minLng: b.getWest(), minLat: b.getSouth(),
-        maxLng: b.getEast(), maxLat: b.getNorth()
-      };
-    }
-
-    const group = L.layerGroup();
-    let added = new Set();
-
-    function sync(bounds) {
-      const w = bounds.getWest(), s = bounds.getSouth(), e = bounds.getEast(), n = bounds.getNorth();
-      const nowVisible = new Set();
-      for (let i = 0; i < entries.length; i++) {
-        const en = entries[i];
-        if (en.maxLng >= w && en.minLng <= e && en.maxLat >= s && en.minLat <= n) {
-          nowVisible.add(en.layer);
-          if (!added.has(en.layer)) group.addLayer(en.layer);
-        }
-      }
-      added.forEach(layer => { if (!nowVisible.has(layer)) group.removeLayer(layer); });
-      added = nowVisible;
-    }
-
-    // Only restyles what's currently on screen — stays cheap
-    // regardless of total dataset size.
-    function restyleVisible(styleFn2) {
-      added.forEach(layer => layer.setStyle(styleFn2(layer)));
-    }
-
-    // Guarantees a specific layer is rendered immediately (used when
-    // jumping to a search result that may be off-screen).
-    function include(layer) {
-      if (!added.has(layer)) { group.addLayer(layer); added.add(layer); }
-    }
-
-    return { entries, group, sync, restyleVisible, include };
-  }
-
-  // ---------------------------------------------------------------
-  // LOAD DATA
-  // ---------------------------------------------------------------
-
   Promise.all([
     fetch(PARCELS_URL).then(r => { if (!r.ok) throw new Error('parcels.geojson: ' + r.status); return r.json(); }),
     fetch(LANDCOVER_URL).then(r => { if (!r.ok) throw new Error('landcover.geojson: ' + r.status); return r.json(); })
@@ -694,94 +620,35 @@
       { position: 'topright', collapsed: false }
     ).addTo(map);
 
-    const parcelsVP = buildViewportSet(
-      parcelData.features,
-      feature => parcelStyle(feature, false),
-      {},
-      (feature, layer) => {
+    geoLayer = L.geoJSON(parcelData, {
+      renderer: canvasRenderer,
+      style: feature => parcelStyle(feature, false),
+      onEachFeature: (feature, layer) => {
         layer.bindPopup(`<strong>APN ${feature.properties[PARCEL_APN_FIELD]}</strong>`);
         layer.on('click', e => {
           L.DomEvent.stopPropagation(e); // don't let this bubble to the map's click-away handler
           activateParcel(layer);
         });
       }
-    );
+    }).addTo(map);
 
-    const hatchFeatures = parcelData.features.filter(f => f.properties['Water System Type'] === 'C');
-    const hatchVP = buildViewportSet(hatchFeatures, hatchStyleFor, {});
-
-    const cropVP = buildViewportSet(landCoverData.features, landCoverStyle, { interactive: false });
-
-    parcelsVP.group.addTo(map);
-    hatchVP.group.addTo(map);
-
-    // ---------------------------------------------------------------
-    // PARCELS / CROPPED ACRES TOGGLE
-    // ---------------------------------------------------------------
-
-    let layerMode = 'parcels';
-
-    function syncViewportNow() {
-      const bounds = map.getBounds().pad(0.25); // small buffer so panning doesn't pop-in shapes at the edge
-      if (layerMode === 'parcels') {
-        parcelsVP.sync(bounds);
-        hatchVP.sync(bounds);
-      } else {
-        cropVP.sync(bounds);
-      }
-    }
-
-    function setLayerMode(mode) {
-      if (mode === layerMode) return;
-      layerMode = mode;
-      if (mode === 'parcels') {
-        map.removeLayer(cropVP.group);
-        parcelsVP.group.addTo(map);
-        hatchVP.group.addTo(map);
-      } else {
-        map.removeLayer(parcelsVP.group);
-        map.removeLayer(hatchVP.group);
-        cropVP.group.addTo(map);
-      }
-      syncViewportNow();
-      document.querySelectorAll('input[name="layerMode"]').forEach(r => { r.checked = (r.value === mode); });
-    }
-
-    let viewportSyncTimer = null;
-    function scheduleViewportSync() {
-      clearTimeout(viewportSyncTimer);
-      viewportSyncTimer = setTimeout(syncViewportNow, 100);
-    }
-    map.on('moveend zoomend', scheduleViewportSync);
-
-    const ModeToggle = L.Control.extend({
-      options: { position: 'topright' },
-      onAdd: function () {
-        const div = L.DomUtil.create('div', 'leaflet-bar leaflet-control mode-toggle-control');
-        div.innerHTML =
-          '<label><input type="radio" name="layerMode" value="parcels" checked> Parcels</label>' +
-          '<label><input type="radio" name="layerMode" value="cropped"> Cropped Acres (Tier 2)</label>';
-        L.DomEvent.disableClickPropagation(div);
-        div.addEventListener('change', e => setLayerMode(e.target.value));
-        return div;
-      }
-    });
-    new ModeToggle().addTo(map);
+    hatchLayer = L.geoJSON(parcelData, {
+      renderer: canvasRenderer,
+      filter: f => f.properties['Water System Type'] === 'C',
+      style: hatchStyleFor
+    }).addTo(map);
 
     // ---------------------------------------------------------------
     // FOCUS MODE
     // Selecting a parcel dims everything else (other parcels' colors,
-    // the hatch layer, and the crop overlay if it's showing) so
+    // the hatch layer, and the full land cover overlay if it's on) so
     // attention stays on that parcel's crop mix. Clicking empty map
-    // space clears the focus and restores full symbology. Only
-    // currently-visible layers get restyled — cheap regardless of
-    // total dataset size.
+    // space clears the focus and restores full symbology.
     // ---------------------------------------------------------------
 
     function refreshAllStyles() {
-      parcelsVP.restyleVisible(layer => parcelStyle(layer.feature, layer === selectedLayer));
-      hatchVP.restyleVisible(layer => hatchStyleFor(layer.feature));
-      cropVP.restyleVisible(layer => landCoverStyle(layer.feature));
+      geoLayer.eachLayer(layer => layer.setStyle(parcelStyle(layer.feature, layer === selectedLayer)));
+      hatchLayer.eachLayer(layer => layer.setStyle(hatchStyleFor(layer.feature)));
     }
 
     function activateParcel(layer) {
@@ -808,14 +675,12 @@
     // APN SEARCH
     // ---------------------------------------------------------------
 
-    const apnIndex = parcelsVP.entries.map(entry => ({
-      apn: String(entry.feature.properties[PARCEL_APN_FIELD]),
-      layer: entry.layer
-    }));
+    const apnIndex = [];
+    geoLayer.eachLayer(layer => {
+      apnIndex.push({ apn: String(layer.feature.properties[PARCEL_APN_FIELD]), layer });
+    });
 
     function selectParcel(layer) {
-      setLayerMode('parcels'); // search results only make sense in parcel mode
-      parcelsVP.include(layer); // guarantee it's rendered even if off-screen
       activateParcel(layer);
       map.fitBounds(layer.getBounds(), { maxZoom: 18, padding: [40, 40] });
       layer.openPopup();
@@ -866,20 +731,58 @@
       if (!e.target.closest('.search-wrap')) searchResults.classList.remove('active');
     });
 
+    // ---------------------------------------------------------------
+    // APN LABELS (viewport-lazy)
+    // At real scale, binding a permanent tooltip to every parcel up
+    // front would create tens of thousands of DOM nodes that just
+    // sit there hidden. Instead, only parcels currently within the
+    // visible map bounds get a tooltip, rebuilt on every pan/zoom.
+    // Each layer's bounds are cached once at load so this stays a
+    // cheap numeric check rather than recomputing geometry bounds
+    // on every move.
+    // ---------------------------------------------------------------
+
+    const LABEL_MIN_ZOOM = 17;
+    const parcelBoundsCache = apnIndex.map(entry => ({ layer: entry.layer, bounds: entry.layer.getBounds() }));
+    let labeledLayers = new Set();
+
+    function updateVisibleLabels() {
+      const show = map.getZoom() >= LABEL_MIN_ZOOM;
+      document.getElementById('map').classList.toggle('labels-visible', show);
+
+      if (!show) {
+        labeledLayers.forEach(layer => layer.unbindTooltip());
+        labeledLayers.clear();
+        return;
+      }
+
+      const viewBounds = map.getBounds();
+      const nowVisible = new Set();
+      parcelBoundsCache.forEach(({ layer, bounds }) => {
+        if (viewBounds.intersects(bounds)) {
+          nowVisible.add(layer);
+          if (!labeledLayers.has(layer)) {
+            layer.bindTooltip(String(layer.feature.properties[PARCEL_APN_FIELD]), {
+              permanent: true,
+              direction: 'center',
+              className: 'apn-label'
+            });
+          }
+        }
+      });
+      labeledLayers.forEach(layer => {
+        if (!nowVisible.has(layer)) layer.unbindTooltip();
+      });
+      labeledLayers = nowVisible;
+    }
+
+    map.on('zoomend moveend', updateVisibleLabels);
+    updateVisibleLabels();
+
     document.getElementById('hint').textContent =
       'Click a parcel to see its details and crop mix.';
 
-    // Compute overall bounds numerically (fast) rather than via a
-    // throwaway Leaflet object per feature.
-    let minLat = Infinity, minLng = Infinity, maxLat = -Infinity, maxLng = -Infinity;
-    parcelsVP.entries.forEach(en => {
-      if (en.minLat < minLat) minLat = en.minLat;
-      if (en.minLng < minLng) minLng = en.minLng;
-      if (en.maxLat > maxLat) maxLat = en.maxLat;
-      if (en.maxLng > maxLng) maxLng = en.maxLng;
-    });
-    map.fitBounds([[minLat, minLng], [maxLat, maxLng]], { padding: [30, 30] });
-    syncViewportNow();
+    map.fitBounds(geoLayer.getBounds(), { padding: [30, 30] });
 
   }).catch(err => {
     document.getElementById('hint').textContent =

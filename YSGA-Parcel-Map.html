@@ -739,11 +739,16 @@
     // visible map bounds get a tooltip, rebuilt on every pan/zoom.
     // Each layer's bounds are cached once at load so this stays a
     // cheap numeric check rather than recomputing geometry bounds
-    // on every move.
+    // on every move. Small parcels (< MIN_LABEL_ACRES) are excluded
+    // from the cache entirely up front, since they'd rarely have
+    // room to show a readable label anyway.
     // ---------------------------------------------------------------
 
-    const LABEL_MIN_ZOOM = 17;
-    const parcelBoundsCache = apnIndex.map(entry => ({ layer: entry.layer, bounds: entry.layer.getBounds() }));
+    const LABEL_MIN_ZOOM = 15;
+    const MIN_LABEL_ACRES = 1;
+    const parcelBoundsCache = apnIndex
+      .filter(entry => Number(entry.layer.feature.properties['GSA Acres']) >= MIN_LABEL_ACRES)
+      .map(entry => ({ layer: entry.layer, bounds: entry.layer.getBounds() }));
     let labeledLayers = new Set();
 
     function updateVisibleLabels() {

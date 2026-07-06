@@ -281,7 +281,7 @@
   <div id="map"></div>
   <div id="panel">
     <div class="brand">YSGA Fee Parcel Viewer</div>
-    <h1>Click on a parcel to view its crop data, or search by APN below</h1>
+    <h1>Click on a parcel to view its crop data, or search by APN below:</h1>
 
     <div class="search-wrap">
       <input type="text" id="apn-search" placeholder="Search parcel APN…" autocomplete="off" />
@@ -666,7 +666,7 @@
       document.getElementById('card').classList.remove('active');
       const hint = document.getElementById('hint');
       hint.style.display = 'block';
-      hint.textContent = 'Click a parcel to see its details and crop mix.';
+      hint.textContent = 'Click a parcel to view more information.';
     }
 
     map.on('click', clearFocus);

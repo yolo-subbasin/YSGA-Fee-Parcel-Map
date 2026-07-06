@@ -666,7 +666,7 @@
       document.getElementById('card').classList.remove('active');
       const hint = document.getElementById('hint');
       hint.style.display = 'block';
-      hint.textContent = 'Click a parcel to view more information.';
+      hint.textContent = 'Click on a parcel to view more information.';
     }
 
     map.on('click', clearFocus);
@@ -785,7 +785,7 @@
     updateVisibleLabels();
 
     document.getElementById('hint').textContent =
-      'Click a parcel to see its details and crop mix.';
+      'Click on a parcel to view more information.';
 
     map.fitBounds(geoLayer.getBounds(), { padding: [30, 30] });
 

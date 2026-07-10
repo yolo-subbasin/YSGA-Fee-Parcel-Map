@@ -67,7 +67,7 @@
     margin-bottom: 16px;
   }
 
-  #apn-search {
+  #apn-search, #address-search {
     width: 100%;
     padding: 9px 10px;
     border: 1px solid var(--line);
@@ -77,7 +77,7 @@
     background: #ffffff;
     color: var(--ink);
   }
-  #apn-search:focus {
+  #apn-search:focus, #address-search:focus {
     outline: none;
     border-color: var(--accent);
   }
@@ -288,6 +288,11 @@
       <div class="search-results" id="apn-search-results"></div>
     </div>
 
+    <div class="search-wrap" style="margin-top: -8px;">
+      <input type="text" id="address-search" placeholder="Search parcel address…" autocomplete="off" />
+      <div class="search-results" id="address-search-results"></div>
+    </div>
+
     <div class="hint" id="hint">
       Loading parcel and land cover data…
     </div>
@@ -417,7 +422,7 @@
   }
 
   // Parcel attribute schema: County, APN, Formatted_, District_P,
-  // "GSA Acres", "Water System Type". Field names with spaces are
+  // "GSA Acres", "Water Syst", Situs. Field names with spaces are
   // accessed via bracket notation below.
   const fieldLabels = {
     County: "County",
@@ -633,7 +638,7 @@
 
     hatchLayer = L.geoJSON(parcelData, {
       renderer: canvasRenderer,
-      filter: f => f.properties['Water System Type'] === 'C',
+      filter: f => f.properties['Water Syst'] === 'C',
       style: hatchStyleFor
     }).addTo(map);
 
@@ -665,7 +670,7 @@
       document.getElementById('card').classList.remove('active');
       const hint = document.getElementById('hint');
       hint.style.display = 'block';
-      hint.textContent = 'Click a parcel to see its acreage and crop mix.';
+      hint.textContent = 'Click a parcel to see its details and crop mix.';
     }
 
     map.on('click', clearFocus);
@@ -727,7 +732,94 @@
     });
 
     document.addEventListener('click', e => {
-      if (!e.target.closest('.search-wrap')) searchResults.classList.remove('active');
+      if (!e.target.closest('.search-wrap')) {
+        searchResults.classList.remove('active');
+        addressResults.classList.remove('active');
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // ADDRESS SEARCH
+    // Direct attribute search against the "Situs" field, same pattern
+    // as the APN search above — instant, no external service needed.
+    //
+    // Rural addresses often store abbreviated street types (e.g.
+    // "CR 98" for "County Road 98"), so a plain substring match would
+    // fail if someone types the spelled-out form. normalizeAddress()
+    // collapses common variants to one canonical token on both the
+    // typed query and the stored address before comparing, so either
+    // form finds the match. The dropdown still shows the original,
+    // unmodified address text — normalization only affects matching.
+    // ---------------------------------------------------------------
+
+    const ADDRESS_PHRASE_SYNONYMS = [
+      [/\bcounty road\b/g, 'cr'], [/\bco road\b/g, 'cr'], [/\bco rd\b/g, 'cr'],
+      [/\bstate highway\b/g, 'hwy'], [/\bstate hwy\b/g, 'hwy']
+    ];
+    const ADDRESS_WORD_SYNONYMS = {
+      road: 'rd', rd: 'rd',
+      street: 'st', st: 'st',
+      avenue: 'ave', ave: 'ave',
+      highway: 'hwy', hwy: 'hwy',
+      drive: 'dr', dr: 'dr',
+      lane: 'ln', ln: 'ln',
+      boulevard: 'blvd', blvd: 'blvd',
+      court: 'ct', ct: 'ct',
+      place: 'pl', pl: 'pl',
+      circle: 'cir', cir: 'cir',
+      cr: 'cr'
+    };
+    function normalizeAddress(str) {
+      let s = str.toLowerCase().replace(/[.,]/g, '');
+      ADDRESS_PHRASE_SYNONYMS.forEach(([pattern, replacement]) => { s = s.replace(pattern, replacement); });
+      return s.split(/\s+/).map(w => ADDRESS_WORD_SYNONYMS[w] || w).join(' ');
+    }
+
+    const addressIndex = [];
+    geoLayer.eachLayer(layer => {
+      const situs = layer.feature.properties.Situs;
+      if (situs) addressIndex.push({ address: String(situs), normalized: normalizeAddress(String(situs)), layer });
+    });
+
+    const addressInput = document.getElementById('address-search');
+    const addressResults = document.getElementById('address-search-results');
+
+    addressInput.addEventListener('input', () => {
+      const q = normalizeAddress(addressInput.value.trim());
+      addressResults.innerHTML = '';
+      if (q.length < 2) { addressResults.classList.remove('active'); return; }
+
+      const matches = [];
+      for (let i = 0; i < addressIndex.length && matches.length < 8; i++) {
+        if (addressIndex[i].normalized.includes(q)) matches.push(addressIndex[i]);
+      }
+      if (matches.length === 0) {
+        addressResults.innerHTML = '<div class="search-no-results">No matching parcels</div>';
+        addressResults.classList.add('active');
+        return;
+      }
+
+      matches.forEach(entry => {
+        const item = document.createElement('div');
+        item.className = 'search-result-item';
+        item.textContent = entry.address;
+        item.addEventListener('click', () => {
+          addressInput.value = entry.address;
+          addressResults.classList.remove('active');
+          selectParcel(entry.layer);
+        });
+        addressResults.appendChild(item);
+      });
+      addressResults.classList.add('active');
+    });
+
+    addressInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        const first = addressResults.querySelector('.search-result-item');
+        if (first) first.click();
+      } else if (e.key === 'Escape') {
+        addressResults.classList.remove('active');
+      }
     });
 
     // ---------------------------------------------------------------
@@ -784,7 +876,7 @@
     updateVisibleLabels();
 
     document.getElementById('hint').textContent =
-      'Click a parcel to see its acreage and crop mix.';
+      'Click a parcel to see its details and crop mix.';
 
     map.fitBounds(geoLayer.getBounds(), { padding: [30, 30] });
 

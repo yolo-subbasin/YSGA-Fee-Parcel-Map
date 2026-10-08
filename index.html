@@ -10,9 +10,9 @@
     --ink: #24302a;
     --paper: #f6f4ee;
     --line: #cfc9ba;
-    --district-y: #3f6fb0;
-    --district-n: #b5453c;
-    --district-f: #4f8f5b;
+    --district-y: #1f6fe0;
+    --district-n: #e0301e;
+    --district-f: #1fa34a;
     --tier2-no: #8a8a8a;
     --hatch-line: #1a1a1a;
     --accent: #b5502c;
@@ -508,7 +508,7 @@
     return {
       color: isSelected ? '#b5502c' : (dimmed ? 'rgba(42,42,42,0.15)' : '#2a2a2a'),
       weight: isSelected ? 3 : 1,
-      fillOpacity: dimmed ? 0.05 : 0.35,
+      fillOpacity: dimmed ? 0.05 : 0.5,
       fillColor: fillColorFor(feature)
     };
   }

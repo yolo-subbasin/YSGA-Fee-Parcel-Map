@@ -384,6 +384,7 @@
     "F16": "Corn, Sorghum or Sudan", "F2": "Safflower", "G2": "Wheat", "G6": "Grain and Hay - Misc.",
     "P1": "Alfalfa and alfalfa mixtures", "P3": "Pasture - Mixed", "P6": "Pasture - Miscellaneous Grasses",
     "P7": "Pasture - Turf Farms", "R1": "Rice", "R2": "Rice - Wild", "T10": "Onions and Garlic",
+    "T12": "Potatoes",
     "T16": "Flowers, nursery and Christmas Tree Farms", "T18": "Truck Crops - Misc.", "T19": "Bushberries",
     "T20": "Strawberries", "T21": "Peppers (Chili, Bell, etc.)", "T27": "Greenhouse", "T32": "Tomatoes (all)",
     "T4": "Cole crops (mixture of T22-T25)", "T9": "Melons, Squash, and Cucumbers",
@@ -440,7 +441,7 @@
 
   const map = L.map('map', { zoomControl: true }).setView([38.5449, -121.7405], 15);
 
-  const lightBasemap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=cb1_3ho1_1_d0cc190a98162b4edd35cd63', {
+  const lightBasemap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
     maxZoom: 19
   });
